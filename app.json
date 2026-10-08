@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "X-SHPRESS",
+    "slug": "xsha-kurir-mobile",
+    "scheme": "xshakurir",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "id.xsha.kurir",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Aplikasi ini butuh akses kamera untuk mengambil foto bukti pengiriman dan lampiran laporan kendala.",
+        "NSPhotoLibraryUsageDescription": "Aplikasi ini butuh akses galeri untuk memilih foto bukti pengiriman dan lampiran laporan kendala."
+      }
+    },
+    "android": {
+      "package": "id.xsha.kurir",
+      "adaptiveIcon": {
+        "backgroundColor": "#7c3aed",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-status-bar",
+      "expo-font",
+      "expo-splash-screen",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Aplikasi ini butuh akses kamera untuk mengambil foto bukti pengiriman dan lampiran laporan kendala.",
+          "photosPermission": "Aplikasi ini butuh akses galeri untuk memilih foto bukti pengiriman dan lampiran laporan kendala."
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "buildArchs": ["armeabi-v7a", "arm64-v8a"]
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "48664c00-1aa3-41f5-b64a-ef9867032a72"
+      }
+    },
+    "owner": "isnanuruls-team"
+  }
+}

@@ -30,14 +30,19 @@ export default function StatusPopup() {
   }, []);
 
   if (!state) return null;
-  const isSuccess = state.type !== "error";
+  const iconSpec =
+    state.type === "error"
+      ? { bg: "#fee2e2", color: "#dc2626", icon: "close" }
+      : state.type === "warning"
+      ? { bg: "#fef3c7", color: "#d97706", icon: "time-outline" }
+      : { bg: "#dcfce7", color: "#16a34a", icon: "checkmark" };
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={() => setState(null)}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setState(null)}>
         <View style={styles.card}>
-          <View style={[styles.iconCircle, { backgroundColor: isSuccess ? "#dcfce7" : "#fee2e2" }]}>
-            <AppIcon name={isSuccess ? "checkmark" : "close"} size={24} color={isSuccess ? "#16a34a" : "#dc2626"} />
+          <View style={[styles.iconCircle, { backgroundColor: iconSpec.bg }]}>
+            <AppIcon name={iconSpec.icon} size={24} color={iconSpec.color} />
           </View>
           <Text style={styles.title}>{state.title}</Text>
           {state.message ? <Text style={styles.message}>{state.message}</Text> : null}

@@ -1,5 +1,5 @@
 import { erpFileUrl } from "./erpClient";
-import { ACTIVITY_TYPES } from "../data/constants";
+import { ACTIVITY_TYPES, categoryIdFromLabel, kendalaIdFromLabel } from "../data/constants";
 
 const TIPE_FROM_ERP = Object.fromEntries(ACTIVITY_TYPES.map((t) => [t.erpTipe, t.id]));
 
@@ -12,8 +12,10 @@ function toMillis(dt) {
 
 // Mapping doc "Driver Activity" (ERP) -> bentuk tampilan aktivitas di mobile. Dipakai utk
 // "memulihkan" aktivitas yg sudah tersimpan di ERP tapi copy lokalnya di HP hilang (mis. abis
-// Kosongkan Data Lokal versi lama, ganti HP, app di-reinstall, dll). Bentuknya flat (bukan shape
-// detail lokal spt kategori/jenisKendala) karena ERP cuma nyimpen "deskripsi" teks gabungan.
+// Kosongkan Data Lokal versi lama, ganti HP, app di-reinstall, dll). Field kendaraan-nya namanya
+// `vehicle` (field standar yg sudah ada dari awal, BUKAN Custom Field "kendaraan" spt yg sempat
+// dikira). kategori/km/jenis_kendala tetap Custom Field baru, disimpan sbg label manusia ("BBM",
+// bukan "bbm") jadi perlu diubah balik ke id lokal lewat categoryIdFromLabel/kendalaIdFromLabel.
 export function mapErpToActivity(doc) {
   return {
     id: doc.name,
@@ -24,6 +26,13 @@ export function mapErpToActivity(doc) {
     deskripsi: doc.deskripsi || "",
     nominal: doc.nominal || 0,
     foto: erpFileUrl(doc.foto),
+    kendaraan: doc.vehicle || null,
+    kategori: doc.kategori ? categoryIdFromLabel(doc.kategori) : null,
+    km: doc.km || null,
+    jenisKendala: doc.jenis_kendala ? kendalaIdFromLabel(doc.jenis_kendala) : null,
+    latitude: doc.latitude || null,
+    longitude: doc.longitude || null,
+    alamatLokasi: doc.alamat_lokasi || null,
     fromErp: true, // nggak bisa diedit/dihapus dari mobile -- cuma hasil baca dari ERP
   };
 }

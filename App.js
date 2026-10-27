@@ -18,6 +18,8 @@ import RootNavigation from "./src/navigation";
 import useAppTheme from "./src/hooks/useAppTheme";
 import StatusPopup from "./src/components/StatusPopup";
 import ConfirmPopup from "./src/components/ConfirmPopup";
+import LocationPermissionGate from "./src/components/LocationPermissionGate";
+import SyncStatusBanner from "./src/components/SyncStatusBanner";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -61,7 +63,10 @@ export default function App() {
       <SafeAreaProvider>
         <AppProvider>
           <AppReady>
-            <RootNavigation />
+            <LocationPermissionGate>
+              <RootNavigation />
+            </LocationPermissionGate>
+            <SyncStatusBanner />
             <StatusBar style="light" />
           </AppReady>
         </AppProvider>

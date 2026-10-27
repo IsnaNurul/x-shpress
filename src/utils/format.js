@@ -16,6 +16,18 @@ export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// Nomor telepon dari ERP biasanya format lokal ("08xx...") -- wa.me butuh format internasional
+// tanpa "+" ("628xx..."). Niru pola normalize_wa_number yg sudah ada di ERP (custom_reports/api/whatsapp.py).
+export function waLink(phone) {
+  if (!phone) return null;
+  let digits = String(phone).replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("0")) digits = "62" + digits.slice(1);
+  else if (digits.startsWith("8")) digits = "62" + digits;
+  if (!digits.startsWith("62")) return null;
+  return `https://wa.me/${digits}`;
+}
+
 export function formatRupiah(n) {
   n = Number(n) || 0;
   return "Rp " + n.toLocaleString("id-ID");

@@ -10,6 +10,7 @@ export const STORAGE_KEYS = {
   driverLogEntries: "xsha_driver_log_entries",
   auth: "xsha_auth_logged_in",
   erpAuth: "xsha_erp_auth", // { usr, apiKey, apiSecret, driverId } milik akun ERP yg sedang login
+  syncQueue: "xsha_sync_queue", // antrian aksi yg gagal kekirim ke ERP (offline) -- lihat utils/syncQueue.js
 };
 
 export async function loadJSON(key, fallback) {

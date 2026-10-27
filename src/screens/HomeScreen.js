@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, Alert, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import useAppTheme from "../hooks/useAppTheme";
 import { fontFamily, radius } from "../theme";
 import { useApp } from "../context/AppContext";
@@ -12,7 +13,8 @@ import MultiSelectField from "../components/MultiSelectField";
 import Lightbox from "../components/Lightbox";
 import { showConfirmPopup } from "../components/ConfirmPopup";
 import AppIcon from "../components/AppIcon";
-import { formatDateLabel, formatTimeWIB, greetingWord, todayISO, deliveryPickLabel, deliveryPickSublabel, uid } from "../utils/format";
+import { formatDateLabel, formatTimeWIB, greetingWord, todayISO, shiftDateISO, deliveryPickLabel, deliveryPickSublabel, uid } from "../utils/format";
+import { captureLocationSilently } from "../utils/location";
 import { statusLabel, statusKey, statusIconSpec, TRANSIT_TYPES, transitTypeLabel } from "../data/constants";
 
 // Checklist default pengecekan kendaraan -- driver bisa tambah item lain sendiri di form-nya.
@@ -24,7 +26,9 @@ export default function HomeScreen({ navigation }) {
     profile,
     deliveries,
     deliveriesLoading,
-    refreshDeliveries,
+    availableDeliveries,
+    availableDeliveriesLoading,
+    refreshAvailableDeliveries,
     driverLogEntries,
     driverLogLoading,
     refreshDriverLog,
@@ -40,6 +44,7 @@ export default function HomeScreen({ navigation }) {
     finishDay,
     transitPickup,
     completeDeliveries,
+    clearLocalData,
   } = useApp();
   const today = todayISO();
   const [lightboxUri, setLightboxUri] = useState(null);
@@ -49,17 +54,37 @@ export default function HomeScreen({ navigation }) {
   const [kendaraanChecked, setKendaraanChecked] = useState(false);
 
   // Driver Log, Aktivitas, & status Pengecekan hari ini (langsung dari ERP, bukan array lokal)
-  // direfresh tiap Home dibuka -- sebelumnya cuma layar Log Driver/Aktivitas yg narik ulang, jadi
-  // Home bisa nampilin status basi (mis. gerbang Pengecekan nggak kebuka padahal udah dicek, atau
-  // "Hari Ini Sudah Selesai" padahal entrinya udah dihapus langsung di ERP).
-  useEffect(() => {
-    refreshDriverLog();
-    refreshActivities();
-    refreshTodaysKendaraan().finally(() => setKendaraanChecked(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // direfresh tiap Home DIFOKUS/dibuka (bukan cuma sekali pas mount) -- react-navigation nggak
+  // unmount tab yg sudah pernah dibuka, jadi kalau cuma useEffect([]) biasa, Home bisa nampilin
+  // status basi begitu balik dari tab lain (mis. gerbang Pengecekan nggak kebuka padahal baru aja
+  // dicek dari tab lain, atau "Hari Ini Sudah Selesai" padahal entrinya udah dihapus langsung di
+  // ERP). `kendaraanChecked` sengaja nggak direset tiap fokus -- biar placeholder loading-nya cuma
+  // nongol sekali di kunjungan pertama, nggak kelip ulang tiap gonta-ganti tab.
+  useFocusEffect(
+    useCallback(() => {
+      refreshDriverLog();
+      refreshActivities();
+      refreshAvailableDeliveries();
+      refreshTodaysKendaraan().finally(() => setKendaraanChecked(true));
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+  );
 
-  const todays = useMemo(() => deliveries.filter((d) => d.date === today), [deliveries, today]);
+  // Home butuh pengiriman status "Ditugaskan" JUGA (bukan cuma yg di `deliveries`) buat kandidat
+  // Transit/Selesai -- sejak "Ditugaskan" dipisah ke tab "Pesanan Tersedia" (lihat
+  // refreshAvailableDeliveries di AppContext.js), data itu sumbernya dari `availableDeliveries`,
+  // bukan `deliveries` lagi. Digabung di sini biar Transit/Selesai tetap bisa milih pengiriman yg
+  // belum di-"Kirim" dari tab Pesanan Tersedia, persis kayak sebelum dipisah.
+  const allDeliveries = useMemo(() => [...deliveries, ...availableDeliveries], [deliveries, availableDeliveries]);
+  const todays = useMemo(() => allDeliveries.filter((d) => d.date === today), [allDeliveries, today]);
+  // Khusus kandidat pilihan Transit/Selesai -- dilebarin ke 3 hari terakhir (bukan literally
+  // "hari ini" kayak `todays` di atas yg emang buat statistik harian), biar pesanan yg dibuat
+  // admin beberapa hari lalu tapi BARU ditugaskan belakangan tetap bisa dipilih driver. Nggak
+  // mempengaruhi angka statistik "Hari Ini" di kartu atas, itu tetap literally hari ini.
+  const recentDeliveries = useMemo(() => {
+    const start = shiftDateISO(today, -2);
+    return allDeliveries.filter((d) => d.date >= start && d.date <= today);
+  }, [allDeliveries, today]);
   const total = todays.length;
   const ditugaskan = todays.filter((d) => d.status === "ditugaskan" || d.status === "pending").length;
   const dalamPerjalanan = todays.filter((d) => d.status === "dalam_perjalanan").length;
@@ -102,6 +127,7 @@ export default function HomeScreen({ navigation }) {
   const [pengecekanCustomItem, setPengecekanCustomItem] = useState("");
   const [pengecekanDeskripsi, setPengecekanDeskripsi] = useState("");
   const [pengecekanPhoto, setPengecekanPhoto] = useState(null);
+  const [pengecekanSubmitting, setPengecekanSubmitting] = useState(false);
 
   function openPengecekan() {
     setPengecekanKendaraan(vehicles.length === 1 ? vehicles[0].plate_number : "");
@@ -123,7 +149,7 @@ export default function HomeScreen({ navigation }) {
   function removeChecklistItem(id) {
     setPengecekanChecklist((prev) => prev.filter((c) => c.id !== id));
   }
-  function savePengecekan() {
+  async function savePengecekan() {
     if (!pengecekanKendaraan) {
       Alert.alert("Lengkapi data", "Kendaraan wajib dipilih.");
       return;
@@ -136,6 +162,10 @@ export default function HomeScreen({ navigation }) {
       Alert.alert("Lengkapi data", "Foto hasil pengecekan wajib diisi.");
       return;
     }
+    setPengecekanSubmitting(true);
+    // Tangkap lokasi diam2 di background (nggak ada langkah/tombol terpisah) -- kalau gagal/izin
+    // ditolak, lanjut simpan tanpa lokasi, jangan blokir Pengecekan-nya (lihat captureLocationSilently).
+    const location = await captureLocationSilently();
     const checkedItems = pengecekanChecklist.map((c) => c.label);
     const checklistText = `Dicek: ${checkedItems.join(", ")}`;
     const deskripsiFinal = [checklistText, pengecekanDeskripsi.trim()].filter(Boolean).join(" — ");
@@ -144,7 +174,11 @@ export default function HomeScreen({ navigation }) {
       kendaraan: pengecekanKendaraan,
       deskripsi: deskripsiFinal,
       foto: pengecekanPhoto,
+      latitude: location?.latitude ?? null,
+      longitude: location?.longitude ?? null,
+      alamatLokasi: location?.address ?? null,
     });
+    setPengecekanSubmitting(false);
     setPengecekanOpen(false);
   }
 
@@ -154,6 +188,7 @@ export default function HomeScreen({ navigation }) {
   const [mulaiOutlet, setMulaiOutlet] = useState("");
   const [mulaiKendaraan, setMulaiKendaraan] = useState("");
   const [mulaiPhoto, setMulaiPhoto] = useState(null);
+  const [mulaiSubmitting, setMulaiSubmitting] = useState(false);
 
   function openMulai() {
     setMulaiKm("");
@@ -162,7 +197,7 @@ export default function HomeScreen({ navigation }) {
     setMulaiPhoto(null);
     setMulaiOpen(true);
   }
-  function saveMulai() {
+  async function saveMulai() {
     const kmNum = Number(mulaiKm);
     if (!kmNum && kmNum !== 0) {
       Alert.alert("Lengkapi data", "KM wajib diisi dengan benar.");
@@ -180,7 +215,10 @@ export default function HomeScreen({ navigation }) {
       Alert.alert("Lengkapi data", "Foto kendaraan/odometer wajib diisi.");
       return;
     }
-    startDay(kmNum, mulaiOutlet, mulaiPhoto, mulaiKendaraan);
+    setMulaiSubmitting(true);
+    const location = await captureLocationSilently();
+    startDay(kmNum, mulaiOutlet, mulaiPhoto, mulaiKendaraan, location);
+    setMulaiSubmitting(false);
     setMulaiOpen(false);
   }
 
@@ -192,13 +230,14 @@ export default function HomeScreen({ navigation }) {
   const [transitKendaraan, setTransitKendaraan] = useState("");
   const [transitPhoto, setTransitPhoto] = useState(null);
   const [transitDeskripsi, setTransitDeskripsi] = useState("");
+  const [transitSubmitting, setTransitSubmitting] = useState(false);
 
   // Pilihan pengiriman di Transit opsional & nggak dibatasi outlet yg lagi dipilih (tampil semua
   // pengiriman yg belum selesai) -- bisa jadi 1 pengiriman ngambil barang transit di beberapa
   // outlet berbeda, atau transit-nya nggak terikat pengiriman spesifik sama sekali.
   const transitCandidates = useMemo(
-    () => todays.filter((d) => !d.pickupAt && d.status !== "terkirim" && d.status !== "gagal"),
-    [todays]
+    () => recentDeliveries.filter((d) => !d.pickupAt && d.status !== "terkirim" && d.status !== "gagal"),
+    [recentDeliveries]
   );
   // Dipakai Selesai buat "Jenis Selesai" (Transit sendiri sudah nggak pakai field jenis lagi).
   const jenisOptions = useMemo(() => TRANSIT_TYPES.map((t) => ({ label: t.label, value: t.id })), []);
@@ -212,7 +251,7 @@ export default function HomeScreen({ navigation }) {
     setTransitDeskripsi("");
     setTransitOpen(true);
   }
-  function saveTransit() {
+  async function saveTransit() {
     if (!transitOutlet) {
       Alert.alert("Lengkapi data", "Pilih outlet dulu.");
       return;
@@ -230,13 +269,17 @@ export default function HomeScreen({ navigation }) {
       Alert.alert("Lengkapi data", "Foto bukti wajib diisi.");
       return;
     }
+    setTransitSubmitting(true);
+    const location = await captureLocationSilently();
     transitPickup(transitSelected, {
       km: kmNum,
       outlet: transitOutlet,
       photo: transitPhoto,
       deskripsi: transitDeskripsi.trim(),
       kendaraan: transitKendaraan,
+      location,
     });
+    setTransitSubmitting(false);
     setTransitOpen(false);
   }
 
@@ -248,8 +291,15 @@ export default function HomeScreen({ navigation }) {
   const [selesaiKendaraan, setSelesaiKendaraan] = useState("");
   const [selesaiDeskripsi, setSelesaiDeskripsi] = useState("");
   const [selesaiPhoto, setSelesaiPhoto] = useState(null);
+  const [selesaiSubmitting, setSelesaiSubmitting] = useState(false);
 
-  const selesaiCandidates = useMemo(() => todays.filter((d) => d.status === "dalam_perjalanan"), [todays]);
+  // Pengiriman yg bisa ditandai "Selesai" -- dulu cuma yg udah "Dalam Perjalanan" (udah di-transit),
+  // sekarang ikut nampilin yg masih "Ditugaskan" juga (blm sempat di-transit tapi mau langsung
+  // ditandai selesai, mis. serah terima langsung di outlet tanpa lewat Transit dulu).
+  const selesaiCandidates = useMemo(
+    () => recentDeliveries.filter((d) => d.status === "dalam_perjalanan" || d.status === "ditugaskan"),
+    [recentDeliveries]
+  );
 
   function openSelesai() {
     setSelesaiJenis("");
@@ -260,17 +310,9 @@ export default function HomeScreen({ navigation }) {
     setSelesaiPhoto(null);
     setSelesaiOpen(true);
   }
-  function pickSelesaiJenis(val) {
-    setSelesaiJenis(val);
-    if (val !== "customer") setSelesaiSelected([]);
-  }
-  function saveSelesai() {
+  async function saveSelesai() {
     if (!selesaiJenis) {
       Alert.alert("Lengkapi data", "Jenis selesai wajib dipilih.");
-      return;
-    }
-    if (selesaiJenis === "customer" && selesaiSelected.length === 0) {
-      Alert.alert("Lengkapi data", "Pilih minimal 1 pengiriman yang selesai.");
       return;
     }
     const kmNum = Number(selesaiKm);
@@ -286,13 +328,17 @@ export default function HomeScreen({ navigation }) {
       Alert.alert("Lengkapi data", "Foto bukti wajib diisi.");
       return;
     }
+    setSelesaiSubmitting(true);
+    const location = await captureLocationSilently();
     completeDeliveries(selesaiSelected, {
       km: kmNum,
       photo: selesaiPhoto,
       jenis: transitTypeLabel(selesaiJenis),
       deskripsi: selesaiDeskripsi.trim(),
       kendaraan: selesaiKendaraan,
+      location,
     });
+    setSelesaiSubmitting(false);
     setSelesaiOpen(false);
   }
 
@@ -329,8 +375,9 @@ export default function HomeScreen({ navigation }) {
       message: "Aksi ini menandakan pengiriman kamu hari ini sudah selesai, dan kamu baru bisa mulai pengiriman lagi besok.",
       confirmText: "Ya, Akhiri",
       danger: true,
-      onConfirm: () => {
-        finishDay(kmNum, finishPhoto, finishDeskripsi.trim(), finishKendaraan);
+      onConfirm: async () => {
+        const location = await captureLocationSilently();
+        finishDay(kmNum, finishPhoto, finishDeskripsi.trim(), finishKendaraan, location);
         setFinishOpen(false);
       },
     });
@@ -338,13 +385,15 @@ export default function HomeScreen({ navigation }) {
 
   const dalamPerjalananOptions = selesaiCandidates.map((d) => ({ label: deliveryPickLabel(d), value: d.id, sublabel: deliveryPickSublabel(d) }));
 
+  // Refresh di Home (pull-to-refresh & tombol ikon) sekalian "bersihin" cache lokal yg udah
+  // kekonfirmasi tersinkron ke ERP (lihat clearLocalData di AppContext.js) -- biar ERP selalu
+  // jadi sumber kebenaran tanpa perlu menu "Hapus Data Lokal" terpisah lagi di Profil. Data yg
+  // masih nunggu sinkron (belum punya erpName) tetap aman, nggak ikut kehapus.
   function refreshAll() {
-    refreshDeliveries();
-    refreshDriverLog();
-    refreshActivities();
+    clearLocalData();
     refreshTodaysKendaraan();
   }
-  const refreshing = deliveriesLoading || driverLogLoading || activitiesLoading;
+  const refreshing = deliveriesLoading || availableDeliveriesLoading || driverLogLoading || activitiesLoading;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
@@ -596,7 +645,7 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        <FieldLabel>Catatan Tambahan (opsional)</FieldLabel>
+        <FieldLabel>Deskripsi (opsional)</FieldLabel>
         <TextField
           value={pengecekanDeskripsi}
           onChangeText={setPengecekanDeskripsi}
@@ -607,7 +656,12 @@ export default function HomeScreen({ navigation }) {
         />
         <FieldLabel required>Foto</FieldLabel>
         <PhotoPicker value={pengecekanPhoto} onChange={setPengecekanPhoto} onPressPreview={setLightboxUri} />
-        <PrimaryButton title="Simpan Pengecekan" icon={{ name: "checkmark-done-outline" }} onPress={savePengecekan} />
+        <PrimaryButton
+          title={pengecekanSubmitting ? "Menyimpan..." : "Simpan Pengecekan"}
+          icon={{ name: "checkmark-done-outline" }}
+          onPress={savePengecekan}
+          disabled={pengecekanSubmitting}
+        />
       </BottomSheet>
 
       <BottomSheet visible={mulaiOpen} onClose={() => setMulaiOpen(false)} title="Mulai Hari Ini">
@@ -619,7 +673,12 @@ export default function HomeScreen({ navigation }) {
         <SelectField value={mulaiKendaraan} options={vehicleOptions} placeholder="Pilih kendaraan..." onChange={setMulaiKendaraan} />
         <FieldLabel required>Foto Kendaraan/Odometer</FieldLabel>
         <PhotoPicker value={mulaiPhoto} onChange={setMulaiPhoto} onPressPreview={setLightboxUri} />
-        <PrimaryButton title="Mulai" icon={{ lib: "MaterialCommunityIcons", name: "flag-checkered" }} onPress={saveMulai} />
+        <PrimaryButton
+          title={mulaiSubmitting ? "Menyimpan..." : "Mulai"}
+          icon={{ lib: "MaterialCommunityIcons", name: "flag-checkered" }}
+          onPress={saveMulai}
+          disabled={mulaiSubmitting}
+        />
       </BottomSheet>
 
       <BottomSheet visible={finishOpen} onClose={() => setFinishOpen(false)} title="Selesaikan Hari Ini">
@@ -666,7 +725,7 @@ export default function HomeScreen({ navigation }) {
         <TextField value={transitKm} onChangeText={setTransitKm} keyboardType="numeric" placeholder="Contoh: 12520" />
         <FieldLabel required>Kendaraan</FieldLabel>
         <SelectField value={transitKendaraan} options={vehicleOptions} placeholder="Pilih kendaraan..." onChange={setTransitKendaraan} />
-        <FieldLabel>Deskripsi (opsional)</FieldLabel>
+        <FieldLabel>Catatan (opsional)</FieldLabel>
         <TextField
           value={transitDeskripsi}
           onChangeText={setTransitDeskripsi}
@@ -678,9 +737,16 @@ export default function HomeScreen({ navigation }) {
         <FieldLabel required>Foto Bukti Ambil Barang</FieldLabel>
         <PhotoPicker value={transitPhoto} onChange={setTransitPhoto} onPressPreview={setLightboxUri} />
         <PrimaryButton
-          title={transitSelected.length > 0 ? `Konfirmasi Transit (${transitSelected.length} paket)` : "Konfirmasi Transit"}
+          title={
+            transitSubmitting
+              ? "Menyimpan..."
+              : transitSelected.length > 0
+              ? `Konfirmasi Transit (${transitSelected.length} paket)`
+              : "Konfirmasi Transit"
+          }
           icon={{ name: "download-outline" }}
           onPress={saveTransit}
+          disabled={transitSubmitting}
         />
       </BottomSheet>
 
@@ -690,28 +756,24 @@ export default function HomeScreen({ navigation }) {
           value={selesaiJenis}
           options={jenisOptions}
           placeholder="Pilih jenis selesai..."
-          onChange={pickSelesaiJenis}
+          onChange={setSelesaiJenis}
         />
-        {selesaiJenis === "customer" ? (
-          selesaiCandidates.length === 0 ? (
-            <Text style={{ color: colors.textMuted, fontSize: 12.5, marginTop: 4 }}>Belum ada pengiriman yang sedang dalam perjalanan.</Text>
-          ) : (
-            <>
-              <FieldLabel required>Pengiriman yang Selesai</FieldLabel>
-              <MultiSelectField
-                items={dalamPerjalananOptions.map((o) => ({ id: o.value, label: o.label, sublabel: o.sublabel }))}
-                selectedIds={selesaiSelected}
-                onChange={setSelesaiSelected}
-                placeholder="Pilih pengiriman..."
-              />
-            </>
-          )
+        {selesaiCandidates.length > 0 ? (
+          <>
+            <FieldLabel>Pengiriman yang Selesai (opsional)</FieldLabel>
+            <MultiSelectField
+              items={dalamPerjalananOptions.map((o) => ({ id: o.value, label: o.label, sublabel: o.sublabel }))}
+              selectedIds={selesaiSelected}
+              onChange={setSelesaiSelected}
+              placeholder="Pilih pengiriman..."
+            />
+          </>
         ) : null}
         <FieldLabel required>KM Saat Ini</FieldLabel>
         <TextField value={selesaiKm} onChangeText={setSelesaiKm} keyboardType="numeric" placeholder="Contoh: 12580" />
         <FieldLabel required>Kendaraan</FieldLabel>
         <SelectField value={selesaiKendaraan} options={vehicleOptions} placeholder="Pilih kendaraan..." onChange={setSelesaiKendaraan} />
-        <FieldLabel>Deskripsi (opsional)</FieldLabel>
+        <FieldLabel>Catatan (opsional)</FieldLabel>
         <TextField
           value={selesaiDeskripsi}
           onChangeText={setSelesaiDeskripsi}
@@ -723,9 +785,16 @@ export default function HomeScreen({ navigation }) {
         <FieldLabel required>Foto Bukti Pengiriman</FieldLabel>
         <PhotoPicker value={selesaiPhoto} onChange={setSelesaiPhoto} onPressPreview={setLightboxUri} />
         <PrimaryButton
-          title={selesaiSelected.length > 0 ? `Selesai (${selesaiSelected.length} paket)` : "Selesai"}
+          title={
+            selesaiSubmitting
+              ? "Menyimpan..."
+              : selesaiSelected.length > 0
+              ? `Selesai (${selesaiSelected.length} paket)`
+              : "Selesai"
+          }
           icon={{ name: "checkmark-circle-outline" }}
           onPress={saveSelesai}
+          disabled={selesaiSubmitting}
         />
       </BottomSheet>
 

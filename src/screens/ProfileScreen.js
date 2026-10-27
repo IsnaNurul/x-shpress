@@ -1,15 +1,17 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import React, { useCallback, useMemo, useState } from "react";
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, Alert, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import useAppTheme from "../hooks/useAppTheme";
 import { fontFamily, radius } from "../theme";
 import { useApp } from "../context/AppContext";
 import { Card, Badge, OptionItem } from "../components/ui";
 import BottomSheet from "../components/BottomSheet";
-import { showStatusPopup } from "../components/StatusPopup";
 import { showConfirmPopup } from "../components/ConfirmPopup";
 import AppIcon from "../components/AppIcon";
 import { initialsOf, todayISO } from "../utils/format";
+import { getPushNotificationStatus, registerForPushNotificationsAsync } from "../utils/pushNotifications";
+import { erpSaveFcmToken } from "../api/erpClient";
 
 const THEME_OPTIONS = [
   { id: "system", label: "Ikuti Sistem", icon: { name: "contrast-outline" } },
@@ -19,20 +21,36 @@ const THEME_OPTIONS = [
 
 const FAQ_ITEMS = [
   {
-    q: "Bagaimana cara mulai memproses pengiriman?",
-    a: "Buka detail pengiriman yang ditugaskan, lalu tekan 'Mulai Proses Pengiriman' dan isi KM + foto kendaraan/odometer. Ini wajib diisi dulu sebelum lanjut ke langkah 'Ambil Barang di Outlet'.",
+    q: "Bagaimana urutan pakai app ini dari awal hari?",
+    a: "Setiap hari wajib mulai dengan Pengecekan Kendaraan dulu (pilih kendaraan, isi checklist, foto) sebelum bisa 'Mulai Hari Ini'. Setelah itu baru bisa Transit (ambil barang), Selesai (tandai pengiriman selesai), dan ditutup dengan Akhiri Hari di akhir shift.",
+  },
+  {
+    q: "Kenapa saya harus Pengecekan Kendaraan dulu?",
+    a: "Pengecekan Kendaraan jadi gerbang wajib sekali di awal hari -- tombol 'Mulai Hari Ini' baru muncul setelah Pengecekan hari itu berhasil disimpan.",
+  },
+  {
+    q: "Apa bedanya Transit dan Selesai?",
+    a: "Transit dipakai buat catat pengambilan barang di outlet (opsional dikaitkan ke pengiriman tertentu). Selesai dipakai buat menandai pengiriman sudah terkirim ke customer -- bisa dipakai baik untuk pengiriman yang masih 'Ditugaskan' maupun yang sudah 'Dalam Perjalanan' (Transit), nggak harus Transit dulu.",
+  },
+  {
+    q: "Kendaraan yang saya pakai berubah di tengah hari, gimana?",
+    a: "Setiap aksi (Mulai, Transit, Selesai, Akhiri Hari, dan Aktivitas) punya pilihan kendaraan sendiri-sendiri -- defaultnya ngikutin kendaraan dari Pengecekan/aksi sebelumnya, tapi bisa diganti kapan saja kalau kendaraannya beda.",
   },
   {
     q: "Apa itu menu Kendala?",
-    a: "Gunakan menu Kendala untuk melaporkan hambatan yang tidak terkait 1 pengiriman spesifik, misalnya kendaraan bermasalah atau akses jalan tertutup. Untuk kendala per-paket (mis. penerima tidak ada), tandai langsung sebagai 'Gagal' pada detail pengiriman.",
+    a: "Gunakan menu Kendala (di tab Aktivitas) untuk melaporkan hambatan yang tidak terkait 1 pengiriman spesifik, misalnya kendaraan bermasalah atau akses jalan tertutup.",
   },
   {
-    q: "Kenapa saya tidak bisa lanjut ke langkah berikutnya?",
-    a: "Setiap pengiriman punya urutan: Mulai -> Ambil Barang di Outlet -> Berangkat ke Customer -> Selesai/Gagal. Pastikan langkah sebelumnya (KM + foto) sudah diisi dulu sebelum lanjut ke langkah berikutnya.",
+    q: "Kenapa ada pengiriman yang otomatis berubah jadi 'Gagal'?",
+    a: "Status 'Gagal' ditentukan otomatis oleh ERP kalau 1 pengiriman belum terkirim sampai akhir hari -- bukan sesuatu yang perlu/bisa ditandai manual dari mobile.",
   },
   {
-    q: "Bagaimana cara mencatat pengeluaran?",
-    a: "Buka menu Aktivitas, tekan tombol tambah (+), lalu isi kategori, jumlah, dan foto struk jika ada.",
+    q: "Apa itu 'Pesanan Tersedia' di tab Pengiriman?",
+    a: "Itu daftar pesanan dari customer yang belum ditugaskan ke driver manapun. Tekan 'Ambil Pesanan' buat menjadikan pesanan itu tugas kamu sendiri -- setelah diambil, langsung muncul juga di 'Tugas Saya'.",
+  },
+  {
+    q: "Bagaimana cara mencatat pengeluaran/aktivitas lain?",
+    a: "Buka menu Aktivitas, tekan tombol tambah (+), pilih tipe (Pengeluaran/Kendala/Cuci Kendaraan), lalu isi datanya -- foto wajib di hampir semua tipe.",
   },
 ];
 
@@ -41,12 +59,40 @@ const FAQ_ITEMS = [
 // identitas resmi dari server tapi sebenarnya cuma tersimpan di HP.
 export default function ProfileScreen() {
   const { colors } = useAppTheme();
-  const { profile, updateProfile, deliveries, logout, clearLocalData } = useApp();
+  const { profile, updateProfile, deliveries, logout } = useApp();
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [clearing, setClearing] = useState(false);
+
+  // Izin notifikasi OPSIONAL (beda dari lokasi yg wajib) -- dicek ulang tiap tab Profil difokus,
+  // biar kalau kurir ubah izinnya lewat Setting HP pas app lagi di background, badge-nya ikut
+  // update pas balik ke sini.
+  const [notifStatus, setNotifStatus] = useState(null); // null=lagi cek, "granted"|"denied"|"blocked"
+  const [notifChecking, setNotifChecking] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      getPushNotificationStatus().then(setNotifStatus);
+    }, [])
+  );
+
+  async function fixNotifPermission() {
+    if (notifChecking) return;
+    if (notifStatus === "blocked") {
+      Linking.openSettings();
+      return;
+    }
+    setNotifChecking(true);
+    try {
+      const token = await registerForPushNotificationsAsync();
+      if (token) {
+        await erpSaveFcmToken(token).catch((err) => console.error("Gagal simpan push token ke ERP:", err));
+      }
+    } finally {
+      setNotifChecking(false);
+      getPushNotificationStatus().then(setNotifStatus);
+    }
+  }
 
   const themePref = profile.themePref || "system";
   const themeLabel = THEME_OPTIONS.find((t) => t.id === themePref)?.label || "Ikuti Sistem";
@@ -64,32 +110,6 @@ export default function ProfileScreen() {
       confirmText: "Keluar",
       danger: true,
       onConfirm: logout,
-    });
-  }
-
-  // Bersihkan cache lokal (pengiriman, 4 jenis aktivitas, riwayat aksi) lalu tarik ulang murni
-  // dari ERP -- buat buang data sisa testing/dummy di HP yg nggak pernah (atau gagal) kesinkron.
-  async function runClearLocal() {
-    setClearing(true);
-    try {
-      await clearLocalData();
-      showStatusPopup({ type: "success", title: "Berhasil", message: "Data lokal sudah dibersihkan dan ditarik ulang dari ERP." });
-    } catch (e) {
-      showStatusPopup({ type: "error", title: "Gagal", message: "Terjadi kesalahan saat membersihkan data lokal, coba lagi." });
-    } finally {
-      setClearing(false);
-    }
-  }
-
-  function confirmClearLocal() {
-    if (clearing) return;
-    showConfirmPopup({
-      title: "Hapus Data Lokal",
-      message:
-        "Semua data lokal (cache pengiriman, pengeluaran, kendala, pengecekan, cuci kendaraan, riwayat aksi) akan dihapus dan ditarik ulang dari ERP. Data yang belum sempat tersinkron ke ERP akan hilang permanen. Lanjutkan?",
-      confirmText: "Hapus",
-      danger: true,
-      onConfirm: runClearLocal,
     });
   }
 
@@ -120,6 +140,28 @@ export default function ProfileScreen() {
         </Card>
 
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Lainnya</Text>
+        {notifStatus && notifStatus !== "granted" ? (
+          <TouchableOpacity
+            onPress={fixNotifPermission}
+            activeOpacity={0.8}
+            style={[styles.navRow, { backgroundColor: colors.card }]}
+          >
+            <View style={[styles.navIcon, { backgroundColor: colors.orangeSoft }]}>
+              <AppIcon name="notifications-off-outline" size={18} color={colors.orange} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: colors.text, fontSize: 14, fontFamily: fontFamily.bold }}>Notifikasi</Text>
+              <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 1 }}>
+                {notifChecking
+                  ? "Memproses..."
+                  : notifStatus === "blocked"
+                  ? "Nonaktif -- tap buat buka Pengaturan HP"
+                  : "Nonaktif -- tap buat aktifin"}
+              </Text>
+            </View>
+            <Badge label="Nonaktif" colorKey="orange" />
+          </TouchableOpacity>
+        ) : null}
         <NavRow
           icon={{ name: "contrast-outline" }}
           title="Tema Aplikasi"
@@ -140,14 +182,6 @@ export default function ProfileScreen() {
           sub="Versi, info, & dukungan"
           colors={colors}
           onPress={() => setAboutOpen(true)}
-        />
-        <NavRow
-          icon={{ name: "trash-outline" }}
-          title="Hapus Data Lokal"
-          sub={clearing ? "Membersihkan & menarik ulang dari ERP..." : "Bersihkan cache HP, tarik ulang murni dari ERP"}
-          colors={colors}
-          danger
-          onPress={confirmClearLocal}
         />
         <NavRow
           icon={{ name: "log-out-outline" }}
@@ -188,9 +222,7 @@ export default function ProfileScreen() {
 
       <BottomSheet visible={aboutOpen} onClose={() => setAboutOpen(false)} title="Tentang Aplikasi">
         <View style={{ alignItems: "center", marginBottom: 8 }}>
-          <View style={[styles.aboutLogo, { backgroundColor: colors.blueSoft }]}>
-            <AppIcon lib="MaterialCommunityIcons" name="moped-outline" size={30} color={colors.purple2} />
-          </View>
+          <Image source={require("../../assets/icon.png")} style={styles.aboutLogo} />
           <Text style={[styles.aboutName, { color: colors.text }]}>X-SHPRESS</Text>
           <Text style={[styles.aboutVersion, { color: colors.textMuted }]}>Versi 1.0.0</Text>
         </View>
@@ -252,7 +284,7 @@ const styles = StyleSheet.create({
   navIcon: { width: 40, height: 40, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   faqQ: { fontSize: 14, fontFamily: fontFamily.bold, marginBottom: 4 },
   faqA: { fontSize: 13, lineHeight: 19 },
-  aboutLogo: { width: 64, height: 64, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  aboutLogo: { width: 64, height: 64, marginBottom: 10 },
   aboutName: { fontSize: 17, fontFamily: fontFamily.extraBold },
   aboutVersion: { fontSize: 12.5, marginTop: 2 },
   aboutDesc: { fontSize: 13, lineHeight: 20, textAlign: "center", marginBottom: 16 },

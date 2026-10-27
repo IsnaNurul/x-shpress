@@ -6,11 +6,22 @@ import { fontFamily, radius } from "../theme";
 // Popup konfirmasi (Ya/Batal) di TENGAH layar, tampilannya senada sama StatusPopup -- dipanggil
 // dari mana saja lewat showConfirmPopup({title, message, confirmText, cancelText, danger, onConfirm}).
 // Beda dari StatusPopup: ini BUKAN auto-hilang, harus pilih salah satu tombol (atau tap di luar
-// kartu = sama kayak Batal).
+// kartu = sama kayak Batal). Kalau `hideCancel: true`, tombol Batal disembunyikan dan jadi
+// popup 1-tombol (OK) -- tap di luar kartu/tombol back Android dianggap sama kayak nekan tombol
+// itu juga (dipakai utk notifikasi yg HARUS di-acknowledge, mis. sesi login habis).
 let showFn = null;
 
-export function showConfirmPopup({ title, message, confirmText = "Ya", cancelText = "Batal", danger = false, onConfirm, onCancel }) {
-  if (showFn) showFn({ title, message, confirmText, cancelText, danger, onConfirm, onCancel });
+export function showConfirmPopup({
+  title,
+  message,
+  confirmText = "Ya",
+  cancelText = "Batal",
+  danger = false,
+  hideCancel = false,
+  onConfirm,
+  onCancel,
+}) {
+  if (showFn) showFn({ title, message, confirmText, cancelText, danger, hideCancel, onConfirm, onCancel });
 }
 
 export default function ConfirmPopup() {
@@ -26,8 +37,13 @@ export default function ConfirmPopup() {
   if (!state) return null;
 
   function close(action) {
-    const { onConfirm, onCancel } = state;
+    const { onConfirm, onCancel, hideCancel } = state;
     setState(null);
+    if (hideCancel) {
+      // Satu2nya aksi -- apa pun cara nutupnya (tombol/tap luar/back), anggap confirm.
+      if (onConfirm) onConfirm();
+      return;
+    }
     if (action === "confirm" && onConfirm) onConfirm();
     if (action === "cancel" && onCancel) onCancel();
   }
@@ -42,9 +58,11 @@ export default function ConfirmPopup() {
           <Text style={styles.title}>{state.title}</Text>
           {state.message ? <Text style={styles.message}>{state.message}</Text> : null}
           <View style={styles.btnRow}>
-            <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => close("cancel")}>
-              <Text style={styles.btnCancelText}>{state.cancelText}</Text>
-            </TouchableOpacity>
+            {!state.hideCancel ? (
+              <TouchableOpacity style={[styles.btn, styles.btnCancel]} onPress={() => close("cancel")}>
+                <Text style={styles.btnCancelText}>{state.cancelText}</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               style={[styles.btn, { backgroundColor: state.danger ? "#dc2626" : "#78008e" }]}
               onPress={() => close("confirm")}

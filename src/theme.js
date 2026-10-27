@@ -35,11 +35,11 @@ export const darkColors = {
   indigo: "#818cf8",
   indigoSoft: "rgba(79, 70, 229, 0.26)",
 
-  bg: "#131019",
-  card: "#1d1926",
+  bg: "#1a1625",
+  card: "#241e32",
   text: "#f1eef9",
-  textMuted: "#9691a8",
-  border: "#2c2739",
+  textMuted: "#9f9ab0",
+  border: "#362f47",
 };
 
 export const radius = { lg: 22, md: 16, sm: 12 };

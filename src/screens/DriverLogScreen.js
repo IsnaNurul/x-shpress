@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
 import useAppTheme from "../hooks/useAppTheme";
 import { fontFamily, radius } from "../theme";
 import { useApp } from "../context/AppContext";
+import BottomSheet from "../components/BottomSheet";
 import DateRangeSheet from "../components/DateRangeSheet";
 import Lightbox from "../components/Lightbox";
 import AppIcon from "../components/AppIcon";
@@ -19,19 +21,23 @@ const ENTRY_META = {
 
 export default function DriverLogScreen() {
   const { colors } = useAppTheme();
-  const { deliveries, expenses, driverLogEntries, driverLogLoading, refreshDriverLog, outletName } = useApp();
+  const { deliveries, expenses, driverLogEntries, driverLogLoading, refreshDriverLog, outletName, vehicleLabel } = useApp();
 
-  // Tarik sekali tiap buka halaman ini, buat pulihkan riwayat aksi yg sudah tersimpan di ERP
-  // tapi copy lokalnya hilang (mis. abis Hapus Data Lokal, ganti HP, dll).
-  useEffect(() => {
-    refreshDriverLog();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Tarik ulang SETIAP tab ini difokus (bukan cuma sekali pas mount) -- buat pulihkan riwayat aksi
+  // yg sudah tersimpan di ERP tapi copy lokalnya hilang (mis. abis Hapus Data Lokal, ganti HP,
+  // dll), & biar aksi yg baru dicatat di tab lain langsung kelihatan begitu balik ke tab ini.
+  useFocusEffect(
+    useCallback(() => {
+      refreshDriverLog();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+  );
 
   const [filterStart, setFilterStart] = useState(todayISO());
   const [filterEnd, setFilterEnd] = useState(todayISO());
   const [dateSheetOpen, setDateSheetOpen] = useState(false);
   const [lightboxUri, setLightboxUri] = useState(null);
+  const [detailItem, setDetailItem] = useState(null);
   const isRange = !!filterStart && filterStart !== filterEnd;
 
   const deliveriesInRange = useMemo(
@@ -52,6 +58,24 @@ export default function DriverLogScreen() {
   );
 
   const hasActivity = stats.totalDo > 0 || entriesInRange.length > 0;
+
+  // Rincian lengkap item yg lagi dibuka di sheet detail -- baris di list sengaja dibikin ringkas
+  // (cuma tipe/KM/waktu), field lain-lainnya (outlet, kendaraan, catatan, lokasi) baru muncul di sini.
+  const detailFields = useMemo(() => {
+    if (!detailItem) return [];
+    return [
+      { label: "Waktu", value: `${formatDateShort(detailItem.date)}, ${formatTimeWIB(detailItem.createdAt)}` },
+      detailItem.km != null ? { label: "KM", value: String(detailItem.km) } : null,
+      detailItem.kendaraan ? { label: "Kendaraan", value: vehicleLabel(detailItem.kendaraan) } : null,
+      detailItem.outlet ? { label: "Outlet", value: outletName(detailItem.outlet) } : null,
+      detailItem.jenisPengiriman ? { label: "Jenis Pengiriman", value: detailItem.jenisPengiriman } : null,
+      detailItem.deliveryIds && detailItem.deliveryIds.length > 0
+        ? { label: "ID Pengiriman", value: detailItem.deliveryIds.join(", ") }
+        : null,
+      detailItem.catatan ? { label: "Catatan", value: detailItem.catatan } : null,
+      detailItem.alamatLokasi ? { label: "Lokasi", value: detailItem.alamatLokasi } : null,
+    ].filter(Boolean);
+  }, [detailItem, vehicleLabel, outletName]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>
@@ -92,7 +116,12 @@ export default function DriverLogScreen() {
                 {entriesInRange.map((e) => {
                   const meta = ENTRY_META[e.tipe] || ENTRY_META.mulai;
                   return (
-                    <View key={e.id} style={[styles.entryRow, { backgroundColor: colors.card }]}>
+                    <TouchableOpacity
+                      key={e.id}
+                      style={[styles.entryRow, { backgroundColor: colors.card }]}
+                      activeOpacity={0.7}
+                      onPress={() => setDetailItem(e)}
+                    >
                       <View style={[styles.entryIcon, { backgroundColor: colors[meta.color + "Soft"] }]}>
                         <AppIcon {...meta.icon} size={18} color={colors[meta.color]} />
                       </View>
@@ -101,18 +130,18 @@ export default function DriverLogScreen() {
                           {meta.label}{e.km != null ? ` — KM ${e.km}` : ""}
                         </Text>
                         <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-                          {isRange ? formatDateShort(e.date) + " · " : ""}{formatTimeWIB(e.createdAt)}{e.outlet ? ` · ${outletName(e.outlet)}` : ""}
+                          {isRange ? formatDateShort(e.date) + " · " : ""}{formatTimeWIB(e.createdAt)}
                         </Text>
-                        {e.catatan ? (
-                          <Text style={[styles.entrySub, { color: colors.textMuted }]} numberOfLines={2}>{e.catatan}</Text>
+                        {!e.erpName ? (
+                          <View style={styles.pendingBadge}>
+                            <AppIcon name="time-outline" size={10} color="#d97706" />
+                            <Text style={styles.pendingBadgeText}>Menunggu dikirim</Text>
+                          </View>
                         ) : null}
                       </View>
-                      {e.photo ? (
-                        <TouchableOpacity onPress={() => setLightboxUri(e.photo)}>
-                          <Image source={{ uri: e.photo }} style={styles.entryThumb} />
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
+                      {e.photo ? <Image source={{ uri: e.photo }} style={styles.entryThumb} /> : null}
+                      <AppIcon name="chevron-forward" size={16} color={colors.textMuted} />
+                    </TouchableOpacity>
                   );
                 })}
               </View>
@@ -137,6 +166,30 @@ export default function DriverLogScreen() {
       />
 
       <Lightbox uri={lightboxUri} onClose={() => setLightboxUri(null)} />
+
+      <BottomSheet
+        visible={!!detailItem}
+        onClose={() => setDetailItem(null)}
+        title={detailItem ? (ENTRY_META[detailItem.tipe] || ENTRY_META.mulai).label : ""}
+      >
+        {detailItem ? (
+          <>
+            {detailFields.map((f, idx) => (
+              <View key={idx} style={{ marginBottom: 14 }}>
+                <Text style={{ fontSize: 11, color: colors.textMuted, fontFamily: fontFamily.bold, letterSpacing: 0.3, marginBottom: 3 }}>
+                  {f.label}
+                </Text>
+                <Text style={{ fontSize: 15, color: colors.text, fontFamily: fontFamily.semiBold }}>{f.value}</Text>
+              </View>
+            ))}
+            {detailItem.photo ? (
+              <TouchableOpacity onPress={() => setLightboxUri(detailItem.photo)} activeOpacity={0.9}>
+                <Image source={{ uri: detailItem.photo }} style={{ width: "100%", height: 180, borderRadius: radius.sm }} />
+              </TouchableOpacity>
+            ) : null}
+          </>
+        ) : null}
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -176,7 +229,18 @@ const styles = StyleSheet.create({
   entryRow: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: radius.md, padding: 14 },
   entryIcon: { width: 40, height: 40, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   entryTitle: { fontSize: 14, fontFamily: fontFamily.bold },
-  entrySub: { fontSize: 12, marginTop: 3 },
   entryThumb: { width: 44, height: 44, borderRadius: 10 },
   syncNote: { fontSize: 11.5, textAlign: "center", paddingTop: 4, paddingBottom: 10 },
+  pendingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    alignSelf: "flex-start",
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "#fef3c7",
+  },
+  pendingBadgeText: { fontSize: 10, fontFamily: fontFamily.bold, color: "#d97706" },
 });

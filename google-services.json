@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1066295717544",
+    "project_id": "xapps-5f592",
+    "storage_bucket": "xapps-5f592.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1066295717544:android:56b984a88721ea20fd9c9d",
+        "android_client_info": {
+          "package_name": "id.xsha.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCm1FBXPmHcMqnKMuF_CM6rIQ05HUJ839M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1066295717544:android:f5d76febfa6523dcfd9c9d",
+        "android_client_info": {
+          "package_name": "id.xsha.kurir"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCm1FBXPmHcMqnKMuF_CM6rIQ05HUJ839M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

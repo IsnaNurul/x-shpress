@@ -7,7 +7,7 @@ import { useApp } from "../context/AppContext";
 import { Card, Badge } from "../components/ui";
 import Lightbox from "../components/Lightbox";
 import AppIcon from "../components/AppIcon";
-import { formatTimestamp, formatRupiah } from "../utils/format";
+import { formatTimestamp, formatRupiah, waLink } from "../utils/format";
 import { statusLabel, statusKey, failureReasonLabel } from "../data/constants";
 
 // Halaman ini sekarang READ-ONLY -- semua aksi (Mulai/Transit/Selesai/Gagal) dipindah ke Home,
@@ -102,7 +102,24 @@ export default function DeliveryDetailScreen({ route, navigation }) {
           {item.outlet ? <DetailField label="Outlet Asal" value={outletName(item.outlet)} colors={colors} /> : null}
           <DetailField label="Penerima" value={item.penerima} colors={colors} />
           {item.customerCategory ? <DetailField label="Kategori Pelanggan" value={item.customerCategory} colors={colors} /> : null}
-          <DetailField label="Alamat" value={item.alamat} colors={colors} />
+          {item.latitude && item.longitude ? (
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 11, color: colors.textMuted, fontFamily: fontFamily.bold, letterSpacing: 0.3, marginBottom: 3 }}>
+                Alamat
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <Text style={{ fontSize: 15, color: colors.text, fontFamily: fontFamily.semiBold, flex: 1 }}>{item.alamat}</Text>
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(`https://www.google.com/maps?q=${item.latitude},${item.longitude}`)}
+                  style={[styles.callBtn, { backgroundColor: colors.blueSoft }]}
+                >
+                  <AppIcon name="navigate-outline" size={15} color={colors.purple2} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <DetailField label="Alamat" value={item.alamat} colors={colors} />
+          )}
           {item.landmark ? <DetailField label="Patokan" value={item.landmark} colors={colors} /> : null}
           {alamatDetail ? <DetailField label="RT/RW · Desa · Kecamatan" value={alamatDetail} colors={colors} /> : null}
           {jarakDetail ? <DetailField label="Jarak Tempuh" value={jarakDetail} colors={colors} /> : null}
@@ -126,10 +143,13 @@ export default function DeliveryDetailScreen({ route, navigation }) {
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                 <Text style={{ fontSize: 15, color: colors.text, fontFamily: fontFamily.semiBold }}>{item.contactNumber}</Text>
                 <TouchableOpacity
-                  onPress={() => Linking.openURL(`tel:${item.contactNumber}`)}
+                  onPress={() => {
+                    const link = waLink(item.contactNumber);
+                    if (link) Linking.openURL(link);
+                  }}
                   style={[styles.callBtn, { backgroundColor: colors.greenSoft }]}
                 >
-                  <AppIcon name="call-outline" size={15} color={colors.green} />
+                  <AppIcon name="logo-whatsapp" size={15} color={colors.green} />
                 </TouchableOpacity>
               </View>
             </View>

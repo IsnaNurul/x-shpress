@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, ScrollView, Platform, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, ScrollView, Platform, Alert, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fontFamily, radius } from "../theme";
 import { useApp } from "../context/AppContext";
@@ -35,9 +35,7 @@ export default function LoginScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
           <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={styles.logoWrap}>
-              <View style={styles.logoCircle}>
-                <AppIcon lib="MaterialCommunityIcons" name="moped-outline" size={38} color="#78008e" />
-              </View>
+              <Image source={require("../../assets/icon.png")} style={styles.logoImage} />
               <Text style={styles.appName}>X-SHPRESS</Text>
               <Text style={styles.tagline}>Masuk untuk mulai tugas pengiriman hari ini</Text>
             </View>
@@ -105,15 +103,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, justifyContent: "center", padding: 24, paddingVertical: 40 },
   logoWrap: { alignItems: "center", marginBottom: 32 },
-  logoCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
+  logoImage: { width: 84, height: 84, marginBottom: 16 },
   appName: { color: "#fff", fontSize: 24, fontFamily: fontFamily.extraBold },
   tagline: { color: "rgba(255,255,255,0.85)", fontSize: 13, marginTop: 6, fontFamily: fontFamily.medium, textAlign: "center" },
   card: { backgroundColor: "#fff", borderRadius: radius.lg, padding: 22 },

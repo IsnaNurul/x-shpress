@@ -5,16 +5,19 @@ import useAppTheme from "../hooks/useAppTheme";
 import { fontFamily, radius } from "../theme";
 import { useApp } from "../context/AppContext";
 import AppIcon from "../components/AppIcon";
-import { todayISO, formatTimestamp } from "../utils/format";
+import { todayISO, shiftDateISO, formatTimestamp } from "../utils/format";
 
 export default function NotificationsScreen({ navigation }) {
   const { colors } = useAppTheme();
   const { deliveries } = useApp();
   const today = todayISO();
+  const start = shiftDateISO(today, -2);
 
+  // Dilebarin ke 3 hari terakhir (bukan literally hari ini) -- sinkron sama pola yg sama di
+  // DeliveriesScreen.js/HomeScreen.js/ActivityScreen.js.
   const notifications = useMemo(() => {
     return deliveries
-      .filter((d) => d.date === today)
+      .filter((d) => d.date >= start && d.date <= today)
       .slice()
       .sort((a, b) => b.assignedAt - a.assignedAt)
       .map((d) => ({
@@ -24,7 +27,7 @@ export default function NotificationsScreen({ navigation }) {
         subtitle: `${d.penerima} · ${d.alamat}`,
         time: d.assignedAt,
       }));
-  }, [deliveries, today]);
+  }, [deliveries, today, start]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={["top"]}>

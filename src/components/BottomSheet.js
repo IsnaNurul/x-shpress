@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import { Modal, View, Text, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useAppTheme from "../hooks/useAppTheme";
 import { fontFamily, radius } from "../theme";
@@ -9,6 +9,7 @@ import AppIcon from "./AppIcon";
 export default function BottomSheet({ visible, onClose, title, children }) {
   const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const { pushSheet, popSheet } = useApp();
 
   useEffect(() => {
@@ -28,9 +29,13 @@ export default function BottomSheet({ visible, onClose, title, children }) {
     >
       <View style={styles.overlay}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
-          <View style={[styles.sheet, { backgroundColor: colors.card, paddingBottom: 30 + insets.bottom }]}>
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.kavWrap} pointerEvents="box-none">
+          <View
+            style={[
+              styles.sheet,
+              { backgroundColor: colors.card, paddingBottom: 26, marginBottom: insets.bottom, maxHeight: windowHeight * 0.82 },
+            ]}
+          >
             <View style={styles.head}>
               <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
               <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.bg }]}>
@@ -51,22 +56,28 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: "rgba(15,10,30,0.5)",
-    justifyContent: "flex-end",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  // Form sekarang muncul sbg modal di TENGAH layar (bukan slide-up dari bawah lagi) -- jadi semua
+  // sudutnya dibikin rounded (lihat `sheet.borderRadius`), bukan cuma sudut atas doang kayak
+  // bottom sheet sebelumnya.
+  kavWrap: {
+    width: "100%",
+    alignItems: "center",
   },
   sheet: {
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
+    borderRadius: 26,
     paddingHorizontal: 22,
-    paddingTop: 10,
-    paddingBottom: 30,
-    maxHeight: "88%",
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 999,
-    alignSelf: "center",
-    marginVertical: 10,
+    paddingTop: 20,
+    width: "100%",
+    maxWidth: 440,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
   },
   head: {
     flexDirection: "row",

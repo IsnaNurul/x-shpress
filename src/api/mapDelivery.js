@@ -48,6 +48,12 @@ export function mapErpToDelivery(doc) {
     pickupKm: doc.pickup_km || null, // KM checkpoint "Transit/Ambil Barang di Outlet" -> field ERP sungguhan
     catatan: doc.notes || "",
     status: STATUS_FROM_ERP[doc.delivery_status] || "pending",
+    // Pembeda pesanan yg otomatis masuk dari app customer (konsumen pesan sendiri lewat app,
+    // langsung ke-assign driver tanpa dispatcher) vs yg dibuat manual sama dispatcher/admin di ERP.
+    // Dipakai buat nentuin "Ditugaskan" ini harus mampir dulu ke "Pesanan Tersedia" (nunggu driver
+    // tap "Kirim Pesanan") atau langsung masuk "Tugas Saya" (dispatcher udah assign manual = udah
+    // dikonfirmasi orang, nggak perlu approval tambahan dari driver).
+    consumerApps: !!doc.custom_consumer_apps,
     assignedAt: toMillis(doc.creation),
     noResi: doc.name,
     customerCategory: doc.customer_category || null,
@@ -62,6 +68,8 @@ export function mapErpToDelivery(doc) {
     distanceNormal: doc.distance_normal || null,
     distanceExtra: doc.distance_extra || null,
     itemLocationNote: doc.item_location_note || null,
+    latitude: doc.delivery_latitude || null,
+    longitude: doc.delivery_longitude || null,
     departedAt: toMillis(doc.departed_at),
     kmArrival: doc.end_km || null, // KM checkpoint "Selesai"/"Gagal" -> field ERP sungguhan (end_km)
     proofPhoto: erpFileUrl(doc.proof_of_delivery),

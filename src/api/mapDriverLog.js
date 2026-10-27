@@ -12,7 +12,7 @@ function toMillis(dt) {
 // (abis Hapus Data Lokal, ganti HP, dll). ERP cuma punya 3 opsi status (Mulai/Transit/Selesai),
 // jadi "selesai_hari" (Akhiri Hari) dibedakan dari "selesai" lewat teks notes-nya yg selalu
 // MENGANDUNG "Selesaikan Hari Ini" (lihat finishDay() di AppContext.js) -- pakai includes(), bukan
-// exact match, krn notes-nya juga bisa kebawa prefix "Kendaraan: X — " & catatan tambahan opsional.
+// exact match, krn notes-nya juga bisa kebawa catatan tambahan opsional di belakangnya.
 export function mapErpToDriverLogEntry(doc) {
   let tipe = "selesai";
   if (doc.status === "Mulai") tipe = "mulai";
@@ -27,8 +27,13 @@ export function mapErpToDriverLogEntry(doc) {
     km: doc.km ?? null,
     outlet: doc.outlet || null,
     photo: erpFileUrl(doc.custom_foto),
-    deliveryIds: [],
+    deliveryIds: doc.id_pengiriman ? doc.id_pengiriman.split(",").map((s) => s.trim()).filter(Boolean) : [],
+    kendaraan: doc.vehicle || null,
     catatan: doc.notes || "",
+    jenisPengiriman: doc.jenis_pengiriman || null,
+    latitude: doc.latitude || null,
+    longitude: doc.longitude || null,
+    alamatLokasi: doc.alamat_lokasi || null,
     createdAt: toMillis(doc.creation),
     fromErp: true,
   };

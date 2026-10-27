@@ -8,6 +8,7 @@ import useAppTheme from "../hooks/useAppTheme";
 import { fontFamily } from "../theme";
 import { useApp } from "../context/AppContext";
 import AppIcon from "../components/AppIcon";
+import { navigationRef } from "./navigationRef";
 
 import HomeScreen from "../screens/HomeScreen";
 import NotificationsScreen from "../screens/NotificationsScreen";
@@ -157,6 +158,7 @@ export default function RootNavigation() {
 
   return (
     <NavigationContainer
+      ref={navigationRef}
       theme={{
         dark: isDark,
         colors: {

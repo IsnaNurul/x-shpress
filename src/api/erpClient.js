@@ -15,11 +15,35 @@ let dynamicSecret = null;
 export function setErpCredentials(key, secret) {
   dynamicKey = key;
   dynamicSecret = secret;
+  authErrorTriggered = false; // login baru -> kredensial fresh, boleh deteksi auth-error lagi
 }
 
 export function clearErpCredentials() {
   dynamicKey = null;
   dynamicSecret = null;
+}
+
+// Kalau API key/secret yg tersimpan di HP ini sudah tidak valid lagi di ERP (mis. Secret-nya
+// ke-reset krn akun yg sama login ulang di device lain -- generate_keys SELALU bikin Secret baru
+// tiap dipanggil), ERP balas 401 "AuthenticationError". Daripada nyasar jadi pesan teknis mentah
+// di layar, callback ini dipasang dari AppContext.js (lewat setOnAuthError) buat nampilin popup
+// & auto-logout begitu kejadian pertama kali kedeteksi. `authErrorTriggered` jaga biar nggak
+// kepanggil berkali-kali kalau beberapa request paralel sama-sama gagal bareng.
+let onAuthError = null;
+let authErrorTriggered = false;
+export function setOnAuthError(fn) {
+  onAuthError = fn;
+}
+function isAuthError(status, json) {
+  if (status === 401) return true;
+  const text = json && (json.exc_type || json.exception) ? String(json.exc_type || json.exception) : "";
+  return text.includes("AuthenticationError");
+}
+function reportAuthErrorIfNeeded(status, json) {
+  if (!isAuthError(status, json)) return;
+  if (authErrorTriggered) return;
+  authErrorTriggered = true;
+  if (onAuthError) onAuthError();
 }
 
 function authHeaders() {
@@ -80,6 +104,7 @@ async function request(method, path, { params, body, isForm } = {}) {
   }
 
   if (!res.ok) {
+    reportAuthErrorIfNeeded(res.status, json);
     throw new ERPNextError(parseErrorMessage(json, text));
   }
   return json;
@@ -107,6 +132,30 @@ export async function erpUpdateDoc(doctype, name, data) {
 export async function erpCreateDoc(doctype, data) {
   const json = await request("POST", `/api/resource/${encodeURIComponent(doctype)}`, { body: data });
   return json.data;
+}
+
+// Field `_assign` TERNYATA field khusus yg dikelola framework Frappe sendiri (lewat tabel ToDo
+// di belakang layar) -- nulis langsung ke field itu via erpUpdateDoc (PUT biasa) KETERIMA tanpa
+// error tapi diam2 nggak kesimpen (sudah dicek langsung ke server). Satu2nya cara yg beneran
+// nyimpen adalah lewat endpoint resmi "Assign To"-nya Frappe ini.
+export async function erpAssignTo(doctype, name, userEmail) {
+  await request("POST", "/api/method/frappe.desk.form.assign_to.add", {
+    body: {
+      doctype,
+      name,
+      assign_to: JSON.stringify([userEmail]),
+    },
+  });
+}
+
+// Simpen token FCM push notification lewat whitelisted method khusus (BUKAN erpUpdateDoc/PUT
+// biasa) -- role "DRIVER" blm tentu punya izin tulis ke doctype User, sama kasusnya kayak
+// erpAssignTo di atas. Server-nya nyimpen ke akun yg lagi login (dari sesi, bukan param), jadi
+// nggak perlu kirim email user di sini.
+export async function erpSaveFcmToken(token) {
+  await request("POST", "/api/method/custom_reports.api.push_notifications.save_fcm_token", {
+    body: { token },
+  });
 }
 
 // Hapus 1 dokumen ERP -- dipakai utk "rollback" kalau sebagian dari 1 aksi gagal (mis. dokumen
@@ -152,6 +201,7 @@ export async function erpUploadFile({ doctype, docname, fieldname, fileUri, file
     json = null;
   }
   if (result.status < 200 || result.status >= 300) {
+    reportAuthErrorIfNeeded(result.status, json);
     throw new ERPNextError(parseErrorMessage(json, result.body || ""));
   }
   const fileDoc = json ? json.message : null;

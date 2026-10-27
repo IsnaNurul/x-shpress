@@ -12,6 +12,13 @@ export function categoryMeta(id) {
   return EXPENSE_CATEGORIES.find((c) => c.id === id) || EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1];
 }
 
+// Kebalikan dari categoryMeta -- ERP nyimpen label manusia ("BBM", bukan "bbm") di Custom Field
+// `kategori`, jadi item yg dipulihkan dari ERP (mapActivity.js) perlu diubah balik ke id lokal.
+export function categoryIdFromLabel(label) {
+  const c = EXPENSE_CATEGORIES.find((c) => c.label === label);
+  return c ? c.id : "lainnya";
+}
+
 // Kendala operasional umum (BUKAN alasan gagal per-pengiriman — itu sudah difasilitasi
 // oleh failure_reason di ERP saat menandai stop "Gagal"). Tab ini untuk isu yang tidak
 // terikat ke 1 pengiriman spesifik, mis. kendaraan/akses jalan — belum ada padanannya di ERP.
@@ -27,14 +34,20 @@ export function kendalaTypeLabel(id) {
   return t ? t.label : "Lainnya";
 }
 
+// Kebalikan dari kendalaTypeLabel -- lihat catatan di categoryIdFromLabel di atas, alasannya sama.
+export function kendalaIdFromLabel(label) {
+  const t = KENDALA_TYPES.find((k) => k.label === label);
+  return t ? t.id : "lainnya";
+}
+
 // Jenis transit (ambil barang di outlet) -- klasifikasi lokal, belum ada field khusus di ERP
 // Driver Log, jadi digabung ke teks catatan/notes saat 1 aksi Transit dicatat.
 export const TRANSIT_TYPES = [
-  { id: "customer", label: "Barang Customer" },
-  { id: "fmcg", label: "Barang FMCG" },
-  { id: "fhs", label: "Barang F&H.S" },
-  { id: "mbg", label: "Barang MBG" },
-  { id: "belanja", label: "Belanja" },
+  { id: "customer", label: "Pengiriman Customer" },
+  { id: "fmcg", label: "Pengiriman FMCG" },
+  { id: "fhs", label: "Pengiriman F&H.S" },
+  { id: "mbg", label: "Pengiriman MBG" },
+  { id: "belanja", label: "Pengiriman Belanja" },
   { id: "lainnya", label: "Lainnya" },
 ];
 

@@ -38,6 +38,9 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+# hasil build APK lokal -- selalu bisa diambil lagi dari EAS, nggak perlu disimpan di git
+*.apk
+
 # generated native folders
 /ios
 /android
